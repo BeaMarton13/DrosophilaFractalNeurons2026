@@ -3,6 +3,8 @@ import os
 import multiprocessing
 import time
 import concurrent.futures
+import json
+import numpy as np
 
 from fafbseg import flywire
 from tqdm import tqdm
@@ -45,6 +47,17 @@ if os.path.exists("processed.txt"):
             else:
                 processed.append(int(line.strip()))
 
+
+# Re-define the custom encoder
+class NpEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, (np.integer, np.floating)):
+            return int(obj) if isinstance(obj, np.integer) else float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super(NpEncoder, self).default(obj)
+    
+
 def run_with_timeout(func, timeout, *args, **kwargs):
     """
     Runs a function with a specified timeout.
@@ -76,14 +89,23 @@ def run_with_timeout(func, timeout, *args, **kwargs):
         return True # Indicate successful completion
 
 
-def properties(skeleton_tree: SkeletonTree):
-    print("--- Tree Properties ---")
-    for key, value in skeleton_tree.tree_properties.items():
-        print(f"{key}: {value}")
+def properties(skeleton_tree: SkeletonTree, undirected, filename=None):
+    if filename is not None:
+        if undirected:
+            file_with_path = os.path.abspath(os.path.join(script_dir, f"../data/undirected/tree_properties/{filename}"))
+        else:
+            file_with_path = os.path.abspath(os.path.join(script_dir, f"../data/directed/tree_properties/{filename}"))
 
-    print("\n--- C Values ---")
-    for key, value in skeleton_tree.c_value_properties.items():
-        print(f"{key}: {value}")
+        try:
+            with open(file_with_path, 'w') as fp:
+                json.dump(skeleton_tree.tree_properties, fp, cls=NpEncoder, indent=4)
+            # print("Data successfully written to output.json.")
+        except TypeError as e:
+            print(f"Error: {e}")
+    else:
+        print("--- Tree Properties ---")
+        for key, value in skeleton_tree.tree_properties.items():
+            print(f"{key}: {value}")
 
 def add_synapse_properties(skeleton_tree_p: SkeletonTree):
     synapses = Synapses(skeleton_tree_p)
@@ -229,6 +251,7 @@ def process_all_w_timeout():
                     if success:
                         with open("processed.txt", "a") as f:
                             f.write(f"{id}\n")
+                        properties(skeleton_tree_dendrite, undirected, filename=f"{skeleton_id}_dendrite.json")
                 except multiprocessing.TimeoutError:
                     # `apply_async` handles termination of the worker, so we just log the timeout
                     with open("timeouts.txt", "a") as f:

@@ -57,11 +57,12 @@ def properties(skeleton_tree: SkeletonTree, undirected, filename=None):
         # Save properties to a JSON file
         with open(file_with_path, 'w') as fp:
             json.dump(skeleton_tree.c_value_properties, fp)
-            # print(f"Properties saved to {file_with_path}")
+            print(f"Properties saved to {file_with_path}")
     else:
         print("\n--- C Values ---")
         for key, value in skeleton_tree.c_value_properties.items():
             print(f"{key}: {value}")
+
 
 def add_synapse_properties(skeleton_tree_p: SkeletonTree):
     synapses = Synapses(skeleton_tree_p)
