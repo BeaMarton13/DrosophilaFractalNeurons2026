@@ -2,9 +2,11 @@ import navis
 import os
 import multiprocessing
 import time
-import concurrent.futures
 import json
+import sys
 import numpy as np
+import psutil
+
 
 from fafbseg import flywire
 from tqdm import tqdm
@@ -24,19 +26,27 @@ from src.export_properties_main import process_skeleton, generate_directory_stru
     # ./input_data/skeletons/dendrite/{skeleton_id}.swc
 
 
-script_dir = os.path.dirname(os.path.abspath(__file__))
-path_to_skeletons = "./input_data/full"
+
+if sys.platform == "darwin":
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    path_to_skeletons = "./input_data/full"
+    SKELETONS_DIR = os.path.join(script_dir, path_to_skeletons)
+else:
+    # We will call this script_dir for easier usage
+    script_dir = "/data/RESULTS/USERS/bea/drosophila/"
+    in_script_dir = "/data/RESULTS/PROJECTS/drosophila/input_data/"
+    SKELETONS_DIR = in_script_dir
+
 # path_to_skeletons = "./sk_lod1_783_healed"
-SKELETONS_DIR = os.path.join(script_dir, path_to_skeletons)
 
 # arrays used as indices must be of integer (or boolean) type
-SKELETON_ID = 720575940626286432
+# SKELETON_ID = 720575940626286432
 
 # list index out of range:
 # SKELETON_ID = 720575940628446888
 
 # SKELETON_ID = 720575940608945163
-# SKELETON_ID = 720575940661305217
+SKELETON_ID = 720575940661305217
 
 processed = []
 if os.path.exists("processed.txt"):
@@ -92,14 +102,18 @@ def run_with_timeout(func, timeout, *args, **kwargs):
 def properties(skeleton_tree: SkeletonTree, undirected, filename=None):
     if filename is not None:
         if undirected:
-            file_with_path = os.path.abspath(os.path.join(script_dir, f"../data/undirected/tree_properties/{filename}"))
+            dir_val = "undirected"
         else:
-            file_with_path = os.path.abspath(os.path.join(script_dir, f"../data/directed/tree_properties/{filename}"))
+            dir_val = "directed"
 
+        if sys.platform == "darwin":
+            file_with_path = os.path.abspath(os.path.join(script_dir, f"../data/{dir_val}/tree_properties/{filename}"))
+        else:
+            file_with_path = os.path.abspath(os.path.join(script_dir, f"data/{dir_val}/tree_properties/{filename}"))
+    
         try:
             with open(file_with_path, 'w') as fp:
                 json.dump(skeleton_tree.tree_properties, fp, cls=NpEncoder, indent=4)
-            # print("Data successfully written to output.json.")
         except TypeError as e:
             print(f"Error: {e}")
     else:
@@ -120,7 +134,8 @@ def add_synapse_properties(skeleton_tree_p: SkeletonTree):
 
 
 def example_usage():
-    skeleton_tree = SkeletonTree(SKELETONS_DIR, SKELETON_ID, skeleton_type="full", undirected=True)
+    undirected = True
+    skeleton_tree = SkeletonTree(SKELETONS_DIR, SKELETON_ID, skeleton_type="full", undirected=undirected)
     # skeleton_nx = skeleton_tree.skeleton_nx
     print("\n\n\n=================================")
     print("--- Full Skeleton Properties ---")
@@ -142,24 +157,24 @@ def example_usage():
     # NOTE same type as skeleton, so we can build a SkeletonTree from it
     #print(type(dendrite_skeleton), type(axon_skeleton))
     add_synapse_properties(skeleton_tree)
-    properties(skeleton_tree)
+    properties(skeleton_tree, undirected=undirected)
 
     print("\n\n\n========================")
     print("--- Axon Properties ---")
     print("========================\n")
-    skeleton_tree_axon = SkeletonTree.from_skeleton(skeleton=axon_skeleton, skeleton_type="axon", undirected=True)
+    skeleton_tree_axon = SkeletonTree.from_skeleton(skeleton=axon_skeleton, skeleton_type="axon", undirected=True, scaled_coords=skeleton_tree.scaled_coords)
     # skeleton_tree_axon = SkeletonTree(skeletons_dir=SKELETONS_DIR, skeleton_id=SKELETON_ID, undirected=True, skeleton=axon_skeleton)
     add_synapse_properties(skeleton_tree_axon)
-    properties(skeleton_tree_axon)
+    properties(skeleton_tree_axon, undirected=undirected)
 
 
     print("\n\n\n============================")
     print("--- Dendrite Properties ---")
     print("============================\n")
-    skeleton_tree_dendrite = SkeletonTree.from_skeleton(skeleton=dendrite_skeleton, skeleton_type="dendrite", undirected=True)
+    skeleton_tree_dendrite = SkeletonTree.from_skeleton(skeleton=dendrite_skeleton, skeleton_type="dendrite", undirected=True, scaled_coords=skeleton_tree.scaled_coords)
     # skeleton_tree_dendrite = SkeletonTree(skeletons_dir=SKELETONS_DIR, skeleton_id=SKELETON_ID, undirected=True, skeleton=dendrite_skeleton)
     add_synapse_properties(skeleton_tree_dendrite)
-    properties(skeleton_tree_dendrite)
+    properties(skeleton_tree_dendrite, undirected=undirected)
 
     exit()
 
@@ -203,22 +218,42 @@ def process_single_skeleton(skeleton_id, undirected, skeletons_dir):
         print(f"Error processing {skeleton_id}: {e}")
         return False # Return failure status
 
-def process_all_w_timeout():
-    timeout = 60
-    generate_directory_structure()
-    # Define a list of skeletons to process
-    full_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "./input_data/full")
-    ids = [int(x.split('.swc')[0]) for x in os.listdir(full_path) if x.endswith('.swc')]
+def limit_cpu_usage(process, num_cpus=4):
+    """Limit process and all its children to use only specified CPUs"""
+    try:
+        # Get process group
+        pgid = os.getpgid(process.pid)
+        
+        # Get all processes in the same group
+        group_processes = [p for p in psutil.process_iter() if os.getpgid(p.pid) == pgid]
+        
+        # Set CPU affinity for each process in the group
+        cpu_list = list(range(num_cpus))  # Use only first num_cpus CPUs
+        for p in group_processes:
+            try:
+                p.cpu_affinity(cpu_list)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+    except Exception as e:
+        print(f"Warning: Could not set CPU affinity: {e}")
+        # Fallback to nice
+        os.nice(num_cpus)
 
-    # Load processed IDs
-    processed = []
+def process_all_w_timeout():
+    # Set strict CPU limit
+    NUM_CPUS = 6  # Strict limit to 4 CPUs
+    
+    timeout = 180
+    generate_directory_structure()
+    
+    ids = [int(x.split('.swc')[0]) for x in os.listdir(SKELETONS_DIR) if x.endswith('.swc')]
+    ids = ids[:1000]
+    
+    # Use set for faster lookups
+    processed = set()
     if os.path.exists("processed.txt"):
         with open('processed.txt', 'r') as file:
-            for line in file:
-                if line.startswith(">"):
-                    processed.append(int(line.strip()[1:]))
-                else:
-                    processed.append(int(line.strip()))
+            processed = {int(line.strip().lstrip('>')) for line in file}
 
     try:
         os.remove("timeouts.txt")
@@ -228,45 +263,64 @@ def process_all_w_timeout():
     print("Starting multiprocessing with a timeout...")
     start_time = time.time()
     
-    # Use a multiprocessing Pool
-    num_workers = max(1, int(os.cpu_count() * 0.85))
-    with multiprocessing.Pool(processes=num_workers) as pool:
-        # Create a list of async results
-        async_results = []
-        for id in ids:
-            if id not in processed:
-                # Submit the task for the current ID and store the result object
-                res = pool.apply_async(
-                    process_single_skeleton,
-                    args=(id, True, full_path)
-                )
-                async_results.append((id, res))
-
-        # Wait for and collect the results with a timeout
-        with tqdm(total=len(async_results), desc="Processing skeletons") as pbar:
-            for id, res in async_results:
-                try:
-                    # Get the result with a timeout. This will block until the result is available or a timeout occurs.
-                    success = res.get(timeout=timeout)
-                    if success:
-                        with open("processed.txt", "a") as f:
+    # Limit number of workers to exact CPU count
+    num_workers = NUM_CPUS
+    print(f"Using exactly {num_workers} worker processes")
+    
+    # Initialize process start method
+    multiprocessing.set_start_method('fork')
+    
+    results = []
+    remaining_ids = [id for id in ids if id not in processed]
+    
+    with tqdm(total=len(remaining_ids), desc="Processing skeletons") as pbar:
+        # Process in chunks to maintain CPU control
+        chunk_size = num_workers
+        for i in range(0, len(remaining_ids), chunk_size):
+            chunk_ids = remaining_ids[i:i + chunk_size]
+            
+            with multiprocessing.Pool(processes=num_workers) as pool:
+                chunk_results = []
+                for id in chunk_ids:
+                    try:
+                        result = pool.apply_async(process_single_skeleton, 
+                                               args=(id, False, SKELETONS_DIR))
+                        success = result.get(timeout=timeout)
+                        
+                        if success:
+                            with open("processed.txt", "a") as f:
+                                f.write(f"{id}\n")
+                            chunk_results.append((id, True))
+                        else:
+                            chunk_results.append((id, False))
+                            
+                    except multiprocessing.TimeoutError:
+                        print(f"\nTimeout ({timeout}s) reached for skeleton {id}")
+                        with open("timeouts.txt", "a") as f:
                             f.write(f"{id}\n")
-                        properties(skeleton_tree_dendrite, undirected, filename=f"{skeleton_id}_dendrite.json")
-                except multiprocessing.TimeoutError:
-                    # `apply_async` handles termination of the worker, so we just log the timeout
-                    with open("timeouts.txt", "a") as f:
-                        f.write(f"{id}\n")
-                    with open("processed.txt", "a") as f:
-                        f.write(f">{id}\n")
-                except Exception as e:
-                    print(f"\nAn unexpected error occurred for skeleton ID {id}: {e}")
-                finally:
-                    pbar.update(1)
-
+                        chunk_results.append((id, False))
+                        
+                    except Exception as e:
+                        print(f"\nError processing {id}: {e}")
+                        chunk_results.append((id, False))
+                    
+                    finally:
+                        pbar.update(1)
+                
+                # Clean up pool after each chunk
+                pool.close()
+                pool.join()
+                results.extend(chunk_results)
+            
+            # Small delay between chunks
+            time.sleep(0.1)
+    
     end_time = time.time()
     print("\n--- Processing Complete ---")
-    print(f"\nTotal time taken: {end_time - start_time:.2f} seconds.")
+    successful = sum(1 for _, success in results if success)
+    print(f"Successfully processed: {successful}/{len(remaining_ids)}")
+    print(f"Total time taken: {end_time - start_time:.2f} seconds")
 
 if __name__ == "__main__":
-    process_all_w_timeout()
-    # example_usage()
+    # process_all_w_timeout()
+    example_usage()

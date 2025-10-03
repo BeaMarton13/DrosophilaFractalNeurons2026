@@ -1,6 +1,7 @@
 import navis
 import json
 import os
+import pandas as pd
 import numpy as np
 
 from fafbseg import flywire
@@ -57,7 +58,7 @@ def properties(skeleton_tree: SkeletonTree, undirected, filename=None):
         # Save properties to a JSON file
         with open(file_with_path, 'w') as fp:
             json.dump(skeleton_tree.c_value_properties, fp)
-            print(f"Properties saved to {file_with_path}")
+            # print(f"Properties saved to {file_with_path}")
     else:
         print("\n--- C Values ---")
         for key, value in skeleton_tree.c_value_properties.items():
@@ -79,27 +80,34 @@ def process_skeleton(skeleton_id, undirected, skeletons_dir):
     skeleton_tree = SkeletonTree(skeletons_dir, skeleton_id, skeleton_type="full", undirected=undirected)
 
     # NOTE we need this function to get the synapses and to navis.split_axon_dendrite work
-    flywire.get_synapses(skeleton_tree.skeleton, attach=True, neuropils=True, materialization=783)
-    split = navis.split_axon_dendrite(skeleton_tree.skeleton, metric='synapse_flow_centrality', reroot_soma=True, cellbodyfiber="soma")
+    # flywire.get_synapses(skeleton_tree.skeleton, attach=True, neuropils=True, materialization=783)
 
-    # Full skeleton
-    skeleton_tree.add_property("num_axons", len(split[(split.compartment == 'axon')]))
-    skeleton_tree.add_property("num_dendrites", len(split[(split.compartment == 'dendrite')]))
-    add_synapse_properties(skeleton_tree)
-    properties(skeleton_tree, undirected, filename=f"{skeleton_id}_full.json")
+    connector_filename = os.path.abspath(os.path.join(script_dir, f"../filtered_connectors/{skeleton_id}.csv"))
+    if os.path.isfile(connector_filename):
+        filtered_connectors = pd.read_csv(connector_filename)
+        skeleton_tree.skeleton._set_connectors(filtered_connectors)
+        split = navis.split_axon_dendrite(skeleton_tree.skeleton, metric='synapse_flow_centrality', reroot_soma=True, cellbodyfiber="soma")
 
-    # Split skeleton
-    dendrite_skeleton = split[(split.compartment == 'dendrite')][0]
-    axon_skeleton = split[(split.compartment == 'axon')][0]
 
-    # Axon skeleton
-    skeleton_tree_axon = SkeletonTree.from_skeleton(skeleton=axon_skeleton, skeleton_type="axon", undirected=undirected)
-    # skeleton_tree_axon = SkeletonTree(skeletons_dir=skeletons_dir, skeleton_id=skeleton_id, undirected=undirected, skeleton=axon_skeleton)
-    add_synapse_properties(skeleton_tree_axon)
-    properties(skeleton_tree_axon, undirected, filename=f"{skeleton_id}_axon.json")
 
-    # Dendrite skeleton
-    skeleton_tree_dendrite = SkeletonTree.from_skeleton(skeleton=dendrite_skeleton, skeleton_type="dendrite", undirected=undirected)
-    # skeleton_tree_dendrite = SkeletonTree(skeletons_dir=skeletons_dir, skeleton_id=skeleton_id, undirected=undirected, skeleton=dendrite_skeleton)
-    add_synapse_properties(skeleton_tree_dendrite)
-    properties(skeleton_tree_dendrite, undirected, filename=f"{skeleton_id}_dendrite.json")
+        # Full skeleton
+        skeleton_tree.add_property("num_axons", len(split[(split.compartment == 'axon')]))
+        skeleton_tree.add_property("num_dendrites", len(split[(split.compartment == 'dendrite')]))
+        add_synapse_properties(skeleton_tree)
+        properties(skeleton_tree, undirected, filename=f"{skeleton_id}_full.json")
+
+        # Split skeleton
+        dendrite_skeleton = split[(split.compartment == 'dendrite')][0]
+        axon_skeleton = split[(split.compartment == 'axon')][0]
+
+        # Axon skeleton
+        skeleton_tree_axon = SkeletonTree.from_skeleton(skeleton=axon_skeleton, skeleton_type="axon", undirected=undirected)
+        # skeleton_tree_axon = SkeletonTree(skeletons_dir=skeletons_dir, skeleton_id=skeleton_id, undirected=undirected, skeleton=axon_skeleton)
+        add_synapse_properties(skeleton_tree_axon)
+        properties(skeleton_tree_axon, undirected, filename=f"{skeleton_id}_axon.json")
+
+        # Dendrite skeleton
+        skeleton_tree_dendrite = SkeletonTree.from_skeleton(skeleton=dendrite_skeleton, skeleton_type="dendrite", undirected=undirected)
+        # skeleton_tree_dendrite = SkeletonTree(skeletons_dir=skeletons_dir, skeleton_id=skeleton_id, undirected=undirected, skeleton=dendrite_skeleton)
+        add_synapse_properties(skeleton_tree_dendrite)
+        properties(skeleton_tree_dendrite, undirected, filename=f"{skeleton_id}_dendrite.json")

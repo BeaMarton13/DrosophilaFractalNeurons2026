@@ -3,10 +3,20 @@ import navis
 from fafbseg import flywire
 import numpy as np
 import os
+import sys
+from sklearn.preprocessing import MinMaxScaler
+
+from src.utils.fractal_dimension import fractal_dimension_sparse, plot
+
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
-autosave_path = "../../input_data/"
-AUTOSAVE_PATH = os.path.abspath(os.path.join(script_dir, autosave_path))
+
+if sys.platform == "darwin":
+    autosave_path = "../../input_data/"
+    AUTOSAVE_PATH = os.path.abspath(os.path.join(script_dir, autosave_path))
+else:
+    autosave_path = "../../input_data/"
+    AUTOSAVE_PATH = os.path.abspath(os.path.join(script_dir, autosave_path))
 
 
 class SkeletonTree:
@@ -17,7 +27,8 @@ class SkeletonTree:
             skeleton_type: str,
             undirected: bool = False, 
             skeleton: navis.Neuron = None, 
-            autosave: bool = False
+            autosave: bool = False,
+            scaled_coords: list = None
         ):
         """
         Initializes the SkeletonTree with the given directory and skeleton ID.
@@ -32,16 +43,20 @@ class SkeletonTree:
             self.skeleton = self._read_skeleton(skeletons_dir)
         else:
             self.skeleton = skeleton
-
         self.skeleton_nx = self._prepare_skeleton()
         self.skeleton_nx_tree = self.skeleton_nx.copy()
+        self.skeleton_type = skeleton_type
         self.undirected = undirected
+
+        self.scaled_coords = scaled_coords
+
+        self.fractal_dimension = self._calculate_fractal_dimension(self.scaled_coords)
+
         if self.undirected:
             self.skeleton_nx_tree = self.skeleton_nx.to_undirected()
         self.level_w_max_width, self.max_width = self.calculate_max_width_at_level()
         self.tree_properties = self.build_tree_properties()
         self.c_value_properties = self.build_c_value_properties()
-
         if autosave:
             full_path = os.path.join(AUTOSAVE_PATH, f"{skeleton_type}/{self.skeleton_id}.swc")
             if not os.path.exists(full_path):
@@ -241,6 +256,7 @@ class SkeletonTree:
             "number_of_multi_children": self.number_of_multi_children,
             "number_of_leaf_nodes": self.number_of_leaf_nodes,
             "cable_length": self.cable_length,
+            "fractal_dimension": self.fractal_dimension
         }
 
     def build_c_value_properties(self) -> dict:
@@ -259,6 +275,36 @@ class SkeletonTree:
             "zero_eigenvalues_count": self.num_zero_eigenvalues / self.num_nodes if self.num_nodes > 0 else 0,
             "eigenvalue_geometric_multiplicity": self.eigenvalue_geometric_multiplicity / self.num_nodes if self.num_nodes > 0 else 0,
         }
+    
+    def _calculate_fractal_dimension(self, scaled_coords, with_plot=False):
+        self.coords = self.skeleton.nodes[['x', 'y', 'z']].values
+        scaler = MinMaxScaler()
+        if scaled_coords is None:
+            self.scaled_coords = scaler.fit_transform(self.coords)
+
+        if with_plot:
+            coeffs, sizes, counts = fractal_dimension_sparse(self.scaled_coords, max(self._calculate_scaled_lengths(self.scaled_coords)))
+            plot(counts, sizes, coeffs, fname=f"fractal_dimension{self.skeleton_type}.png")
+
+        coeffs, _, _ = fractal_dimension_sparse(self.scaled_coords, max(self._calculate_scaled_lengths(self.scaled_coords)))
+        return coeffs[0]
+    
+    def _calculate_scaled_lengths(self, scaled_points):
+        distances = []
+        adjacency = self.skeleton.get_igraph().get_adjacency()
+        neighbor_pairs = []
+        for idx, lst in enumerate(adjacency):
+            try:
+                p_idx = next((i for i, x in enumerate(lst) if x), None)
+            except:
+                p_idx = -1
+
+
+            neighbor_pairs.append([idx, p_idx])
+        for idx, parent in zip(self.skeleton.nodes['node_id'], self.skeleton.nodes['parent_id']):
+            if parent != -1:
+                distances.append(np.linalg.norm(scaled_points[parent - 1] - scaled_points[idx - 1]))
+        return distances
     
     # --- Skeleton Reading and Preparation ---
     def _read_skeleton(self, skeletons_dir: str) -> navis.Neuron:
@@ -504,5 +550,5 @@ class SkeletonTree:
         return max_key, max_value
 
     @classmethod
-    def from_skeleton(cls, skeleton: navis.Neuron, skeleton_type:str, undirected: bool, autosave: bool = True):
-        return cls("dummy_value", skeleton.id, skeleton=skeleton, skeleton_type=skeleton_type, undirected=undirected, autosave=autosave)
+    def from_skeleton(cls, skeleton: navis.Neuron, skeleton_type:str, undirected: bool, autosave: bool = False, scaled_coords: list = None):
+        return cls("dummy_value", skeleton.id, skeleton=skeleton, skeleton_type=skeleton_type, undirected=undirected, autosave=autosave, scaled_coords=scaled_coords)

@@ -34,7 +34,6 @@ class HandleFilteredConnector:
         :param filtered_connectors_filelist: The name of the file containing filtered connectors.
         :return: A dictionary containing filtered connectors.
         """
-        filtered_connectors = {}
         with open(filtered_connectors_filelist, 'r') as file:
             filelist = [x.strip('\n') for x in file.readlines()]
             if f"{self.skeleton_tree_id}.csv" not in filelist:
