@@ -9,14 +9,13 @@ from sklearn.preprocessing import MinMaxScaler
 from src.utils.fractal_dimension import fractal_dimension_sparse, plot
 
 
-script_dir = os.path.dirname(os.path.abspath(__file__))
 
 if sys.platform == "darwin":
+    script_dir = os.path.dirname(os.path.abspath(__file__))
     autosave_path = "../../input_data/"
     AUTOSAVE_PATH = os.path.abspath(os.path.join(script_dir, autosave_path))
 else:
-    autosave_path = "../../input_data/"
-    AUTOSAVE_PATH = os.path.abspath(os.path.join(script_dir, autosave_path))
+    AUTOSAVE_PATH = os.path.abspath("/data/RESULTS/PROJECTS/drosophila/input_data/")
 
 
 class SkeletonTree:

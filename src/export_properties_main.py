@@ -3,6 +3,7 @@ import json
 import os
 import pandas as pd
 import numpy as np
+import sys
 
 from fafbseg import flywire
 
@@ -23,22 +24,37 @@ class NpEncoder(json.JSONEncoder):
         return super(NpEncoder, self).default(obj)
 
 def generate_directory_structure():
-    """Generate the directory structure for saving properties."""
-    os.makedirs(os.path.abspath(os.path.join(script_dir, "../data/undirected/tree_properties")), exist_ok=True)
-    os.makedirs(os.path.abspath(os.path.join(script_dir, "../data/undirected/c_values")), exist_ok=True)
-    os.makedirs(os.path.abspath(os.path.join(script_dir, "../data/directed/tree_properties")), exist_ok=True)
-    os.makedirs(os.path.abspath(os.path.join(script_dir, "../data/directed/c_values")), exist_ok=True)
-    os.makedirs(os.path.abspath(os.path.join(script_dir, "../input_data")), exist_ok=True)
-    os.makedirs(os.path.abspath(os.path.join(script_dir, "../input_data/axon")), exist_ok=True)
-    os.makedirs(os.path.abspath(os.path.join(script_dir, "../input_data/dendrite")), exist_ok=True)
+    
+    if sys.platform == "darwin":
+        """Generate the directory structure for saving properties."""
+        os.makedirs(os.path.abspath(os.path.join(script_dir, "../data/undirected/tree_properties")), exist_ok=True)
+        os.makedirs(os.path.abspath(os.path.join(script_dir, "../data/undirected/c_values")), exist_ok=True)
+        os.makedirs(os.path.abspath(os.path.join(script_dir, "../data/directed/tree_properties")), exist_ok=True)
+        os.makedirs(os.path.abspath(os.path.join(script_dir, "../data/directed/c_values")), exist_ok=True)
+        os.makedirs(os.path.abspath(os.path.join(script_dir, "../input_data")), exist_ok=True)
+        os.makedirs(os.path.abspath(os.path.join(script_dir, "../input_data/axon")), exist_ok=True)
+        os.makedirs(os.path.abspath(os.path.join(script_dir, "../input_data/dendrite")), exist_ok=True)
+    else:
+        """Generate the directory structure for saving properties."""
+        os.makedirs(os.path.abspath(os.path.join("/data/RESULTS/USERS/bea/drosophila/", "data/undirected/tree_properties")), exist_ok=True)
+        os.makedirs(os.path.abspath(os.path.join("/data/RESULTS/USERS/bea/drosophila/", "data/undirected/c_values")), exist_ok=True)
+        os.makedirs(os.path.abspath(os.path.join("/data/RESULTS/USERS/bea/drosophila/", "data/directed/tree_properties")), exist_ok=True)
+        os.makedirs(os.path.abspath(os.path.join("/data/RESULTS/USERS/bea/drosophila/", "data/directed/c_values")), exist_ok=True)
+        os.makedirs(os.path.abspath(os.path.join("/data/RESULTS/PROJECTS/drosophila/", "input_data")), exist_ok=True)
+        os.makedirs(os.path.abspath(os.path.join("/data/RESULTS/PROJECTS/drosophila/", "input_data/axon")), exist_ok=True)
+        os.makedirs(os.path.abspath(os.path.join("/data/RESULTS/PROJECTS/drosophila/", "input_data/dendrite")), exist_ok=True)
 
 def properties(skeleton_tree: SkeletonTree, undirected, filename=None):
     if filename is not None:
         if undirected:
-            file_with_path = os.path.abspath(os.path.join(script_dir, f"../data/undirected/tree_properties/{filename}"))
+            dir_val = "undirected"
         else:
-            file_with_path = os.path.abspath(os.path.join(script_dir, f"../data/directed/tree_properties/{filename}"))
+            dir_val = "directed"
 
+        if sys.platform == "darwin":
+            file_with_path = os.path.abspath(os.path.join(script_dir, f"../data/{dir_val}/tree_properties/{filename}"))
+        else:
+            file_with_path = os.path.abspath(os.path.join(script_dir, f"data/{dir_val}/tree_properties/{filename}"))
         try:
             with open(file_with_path, 'w') as fp:
                 json.dump(skeleton_tree.tree_properties, fp, cls=NpEncoder, indent=4)
@@ -51,10 +67,15 @@ def properties(skeleton_tree: SkeletonTree, undirected, filename=None):
             print(f"{key}: {value}")
 
     if filename is not None:
+
         if undirected:
-            file_with_path = os.path.join(script_dir, f"../data/undirected/c_values/{filename}")
+            dir_val = "undirected"
         else:
-            file_with_path = os.path.join(script_dir, f"../data/directed/c_values/{filename}")
+            dir_val = "directed"
+        if sys.platform == "darwin":
+            file_with_path = os.path.abspath(os.path.join(script_dir, f"../data/{dir_val}/c_values/{filename}"))
+        else:
+            file_with_path = os.path.abspath(os.path.join(script_dir, f"data/{dir_val}/c_values/{filename}"))
         # Save properties to a JSON file
         with open(file_with_path, 'w') as fp:
             json.dump(skeleton_tree.c_value_properties, fp)
@@ -82,7 +103,17 @@ def process_skeleton(skeleton_id, undirected, skeletons_dir):
     # NOTE we need this function to get the synapses and to navis.split_axon_dendrite work
     # flywire.get_synapses(skeleton_tree.skeleton, attach=True, neuropils=True, materialization=783)
 
-    connector_filename = os.path.abspath(os.path.join(script_dir, f"../filtered_connectors/{skeleton_id}.csv"))
+
+
+    if sys.platform == "darwin":
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        connector_filename = os.path.abspath(os.path.join(script_dir, f"../filtered_connectors/{skeleton_id}.csv"))
+    else:
+        # We will call this script_dir for easier usage
+        script_dir = "/data/RESULTS/USERS/bea/drosophila/"
+        in_script_dir = "/data/RESULTS/PROJECTS/drosophila/filtered_connectors/"
+        connector_filename = os.path.abspath(os.path.join(in_script_dir, f"{skeleton_id}.csv"))
+
     if os.path.isfile(connector_filename):
         filtered_connectors = pd.read_csv(connector_filename)
         skeleton_tree.skeleton._set_connectors(filtered_connectors)
