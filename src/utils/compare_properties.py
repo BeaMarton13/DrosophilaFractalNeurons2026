@@ -250,7 +250,7 @@ class ComparePropertiesPlotly:
 
 if __name__ == "__main__":
     # NOTE: Change the directed/undirected cases, while experimenting
-    tree_type = "directed"  # or "undirected"
+    tree_type = "undirected"  # or "undirected"
 
 
     if sys.platform == "darwin":
@@ -261,6 +261,8 @@ if __name__ == "__main__":
         res_dir = "/data/RESULTS/USERS/bea/drosophila/"
         tree_dir = os.path.abspath(os.path.join(res_dir, f"data/{tree_type}/tree_properties/"))
         c_dir = os.path.abspath(os.path.join(res_dir, f"data/{tree_type}/c_values/"))
+
+    print(tree_dir)
 
     forest = AxonDendriteForest.build_forest_from_directory(tree_dir, c_dir, undirected=tree_type=='undirected')
 
@@ -278,16 +280,16 @@ if __name__ == "__main__":
 
 
     for property in properties:
-        comparator.plot_histogram(property, tree_type='both', bins=100, save_path=generate_savefig_path(property, tree_type, 'histogram', html=False))
-        comparator.plot_pairwise(property, property, save_path=generate_savefig_path(property, tree_type, 'pairwise', html=False))
-        comparator.plot_indexed_pair(property, save_path=generate_savefig_path(property, tree_type, 'indexed_pair', html=False))
-        comparator.plot_diff(property, save_path=generate_savefig_path(property, tree_type, 'diff', html=False))
-        comparator.plot_diff_histogram(property, bins=100, save_path=generate_savefig_path(property, tree_type, 'diff_histogram', html=False))
+        comparator.plot_histogram(property, tree_type='both', bins=100, save_path=generate_savefig_path(property, tree_type, 'histogram', save_dir, html=False))
+        comparator.plot_pairwise(property, property, save_path=generate_savefig_path(property, tree_type, 'pairwise', save_dir, html=False))
+        comparator.plot_indexed_pair(property, save_path=generate_savefig_path(property, tree_type, 'indexed_pair', save_dir, html=False))
+        comparator.plot_diff(property, save_path=generate_savefig_path(property, tree_type, 'diff', save_dir, html=False))
+        comparator.plot_diff_histogram(property, bins=100, save_path=generate_savefig_path(property, tree_type, 'diff_histogram', save_dir, html=False))
 
-        comparator_plotly.plot_histogram(property, tree_type='both', bins=100, save_path=generate_savefig_path(property, tree_type, 'histogram', html=True))
-        comparator_plotly.plot_pairwise(property, property, save_path=generate_savefig_path(property, tree_type, 'pairwise', html=True))
-        comparator_plotly.plot_indexed_pair(property, save_path=generate_savefig_path(property, tree_type, 'indexed_pair', html=True))
-        comparator_plotly.plot_diff(property, save_path=generate_savefig_path(property, tree_type, 'diff', html=True))
-        comparator_plotly.plot_diff_histogram(property, bins=100, save_path=generate_savefig_path(property, tree_type, 'diff_histogram', html=True))
+        comparator_plotly.plot_histogram(property, tree_type='both', bins=100, save_path=generate_savefig_path(property, tree_type, 'histogram', save_dir, html=True))
+        comparator_plotly.plot_pairwise(property, property, save_path=generate_savefig_path(property, tree_type, 'pairwise', save_dir, html=True))
+        comparator_plotly.plot_indexed_pair(property, save_path=generate_savefig_path(property, tree_type, 'indexed_pair', save_dir, html=True))
+        comparator_plotly.plot_diff(property, save_path=generate_savefig_path(property, tree_type, 'diff', save_dir, html=True))
+        comparator_plotly.plot_diff_histogram(property, bins=100, save_path=generate_savefig_path(property, tree_type, 'diff_histogram', save_dir, html=True))
 
         
