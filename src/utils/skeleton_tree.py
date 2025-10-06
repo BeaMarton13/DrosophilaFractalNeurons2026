@@ -282,10 +282,10 @@ class SkeletonTree:
             self.scaled_coords = scaler.fit_transform(self.coords)
 
         if with_plot:
-            coeffs, sizes, counts = fractal_dimension_sparse(scaler.fit_transform(self.coords), max(self._calculate_scaled_lengths(self.scaled_coords)))
+            coeffs, sizes, counts = fractal_dimension_sparse(scaler.fit_transform(self.coords), 2 * max(self._calculate_scaled_lengths(self.scaled_coords)))
             plot(counts, sizes, coeffs, fname=f"fractal_dimension{self.skeleton_type}.png")
 
-        coeffs, _, _ = fractal_dimension_sparse(scaler.fit_transform(self.coords), max(self._calculate_scaled_lengths(self.scaled_coords)))
+        coeffs, _, _ = fractal_dimension_sparse(scaler.fit_transform(self.coords), 2 * max(self._calculate_scaled_lengths(self.scaled_coords)))
         return coeffs[0]
     
     def _calculate_scaled_lengths(self, scaled_points):

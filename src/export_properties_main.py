@@ -132,13 +132,13 @@ def process_skeleton(skeleton_id, undirected, skeletons_dir):
         axon_skeleton = split[(split.compartment == 'axon')][0]
 
         # Axon skeleton
-        skeleton_tree_axon = SkeletonTree.from_skeleton(skeleton=axon_skeleton, skeleton_type="axon", undirected=undirected)
+        skeleton_tree_axon = SkeletonTree.from_skeleton(skeleton=axon_skeleton, skeleton_type="axon", undirected=undirected, scaled_coords=skeleton_tree.scaled_coords)
         # skeleton_tree_axon = SkeletonTree(skeletons_dir=skeletons_dir, skeleton_id=skeleton_id, undirected=undirected, skeleton=axon_skeleton)
         add_synapse_properties(skeleton_tree_axon)
         properties(skeleton_tree_axon, undirected, filename=f"{skeleton_id}_axon.json")
 
         # Dendrite skeleton
-        skeleton_tree_dendrite = SkeletonTree.from_skeleton(skeleton=dendrite_skeleton, skeleton_type="dendrite", undirected=undirected)
+        skeleton_tree_dendrite = SkeletonTree.from_skeleton(skeleton=dendrite_skeleton, skeleton_type="dendrite", undirected=undirected, scaled_coords=skeleton_tree.scaled_coords)
         # skeleton_tree_dendrite = SkeletonTree(skeletons_dir=skeletons_dir, skeleton_id=skeleton_id, undirected=undirected, skeleton=dendrite_skeleton)
         add_synapse_properties(skeleton_tree_dendrite)
         properties(skeleton_tree_dendrite, undirected, filename=f"{skeleton_id}_dendrite.json")

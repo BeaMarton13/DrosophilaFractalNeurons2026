@@ -6,16 +6,158 @@ import json
 import sys
 import numpy as np
 import psutil
+from sklearn.preprocessing import MinMaxScaler
+import pandas as pd
 
 
 from fafbseg import flywire
 from tqdm import tqdm
 
-from src.utils.skeleton_tree import SkeletonTree
 from src.utils.synapses import Synapses
 from src.utils.plot import plot_tree_digraph
 
-from src.export_properties_main import process_skeleton, generate_directory_structure
+from src.export_properties_main import generate_directory_structure
+from src.utils.fractal_dimension import fractal_dimension_sparse, plot
+
+
+class SkeletonTree:
+    def __init__(
+            self, 
+            skeletons_dir: str, 
+            skeleton_id: int, 
+            skeleton_type: str,
+            undirected: bool = False, 
+            skeleton: navis.Neuron = None, 
+            autosave: bool = False,
+            scaled_coords: list = None
+        ):
+        """
+        Initializes the SkeletonTree with the given directory and skeleton ID.
+        
+        Args:
+            skeletons_dir (str): Directory where skeleton files are stored.
+            skeleton_id (int): ID of the skeleton to prepare.
+        """
+        self.skeleton_id = skeleton_id
+        if skeleton is None:
+            # Read skeleton from the specified directory
+            self.skeleton = self._read_skeleton(skeletons_dir)
+        else:
+            self.skeleton = skeleton
+        self.skeleton_type = skeleton_type
+        self.undirected = undirected
+
+        self.scaled_coords = scaled_coords
+
+        self.fractal_dimension = self._calculate_fractal_dimension(self.scaled_coords, with_plot=True)
+
+    # --- Skeleton Reading and Preparation ---
+    def _read_skeleton(self, skeletons_dir: str) -> navis.Neuron:
+        """
+        Read a skeleton from the specified directory and skeleton ID.
+        """
+        return navis.read_swc(os.path.join(skeletons_dir, f'{self.skeleton_id}.swc'))
+
+    def _calculate_fractal_dimension(self, scaled_coords, with_plot=False):
+        self.coords = self.skeleton.nodes[['x', 'y', 'z']].values
+        scaler = MinMaxScaler()
+        if scaled_coords is None:
+            self.scaled_coords = scaler.fit_transform(self.coords)
+
+        if with_plot:
+            coeffs, sizes, counts = fractal_dimension_sparse(scaler.fit_transform(self.coords), 2 * max(self._calculate_scaled_lengths(self.scaled_coords)))
+            plot(counts, sizes, coeffs, fname=f"fractal_dimension{self.skeleton_type}.png")
+
+        coeffs, _, _ = fractal_dimension_sparse(scaler.fit_transform(self.coords), 2 * max(self._calculate_scaled_lengths(self.scaled_coords)))
+        return coeffs[0]
+    
+    def _calculate_scaled_lengths(self, scaled_points):
+        distances = []
+        adjacency = self.skeleton.get_igraph().get_adjacency()
+        neighbor_pairs = []
+        for idx, lst in enumerate(adjacency):
+            try:
+                p_idx = next((i for i, x in enumerate(lst) if x), None)
+            except:
+                p_idx = -1
+
+
+            neighbor_pairs.append([idx, p_idx])
+        for idx, parent in zip(self.skeleton.nodes['node_id'], self.skeleton.nodes['parent_id']):
+            if parent != -1:
+                distances.append(np.linalg.norm(scaled_points[parent - 1] - scaled_points[idx - 1]))
+        return distances
+    
+    @classmethod
+    def from_skeleton(cls, skeleton: navis.Neuron, skeleton_type:str, undirected: bool, autosave: bool = False, scaled_coords: list = None):
+        return cls("dummy_value", skeleton.id, skeleton=skeleton, skeleton_type=skeleton_type, undirected=undirected, autosave=autosave, scaled_coords=scaled_coords)
+
+
+
+def properties(skeleton_tree: SkeletonTree, undirected, filename):
+    if undirected:
+        dir_val = "undirected"
+    else:
+        dir_val = "directed"
+
+    if sys.platform == "darwin":
+        file_with_path = os.path.abspath(os.path.join(script_dir, f"./data/{dir_val}/tree_properties/{filename}"))
+    else:
+        file_with_path = os.path.abspath(os.path.join(script_dir, f"data/{dir_val}/tree_properties/{filename}"))
+    try:
+        with open(file_with_path, 'r') as fp:
+            tree_properties = json.load(fp)
+
+        # NOTE: update here the property name you want to add
+        tree_properties['fractal_dimension'] = skeleton_tree.fractal_dimension
+        with open(file_with_path, 'w') as fp:
+            json.dump(tree_properties, fp, cls=NpEncoder, indent=4)
+        # print("Data successfully written to output.json.")
+    except TypeError as e:
+        print(f"Error: {e}")
+
+
+def process_skeleton(skeleton_id, undirected, skeletons_dir):
+    skeleton_tree = SkeletonTree(skeletons_dir, skeleton_id, skeleton_type="full", undirected=undirected)
+
+    # NOTE we need this function to get the synapses and to navis.split_axon_dendrite work
+    # flywire.get_synapses(skeleton_tree.skeleton, attach=True, neuropils=True, materialization=783)
+
+
+
+    if sys.platform == "darwin":
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        connector_filename = os.path.abspath(os.path.join(script_dir, f"./filtered_connectors/{skeleton_id}.csv"))
+    else:
+        # We will call this script_dir for easier usage
+        script_dir = "/data/RESULTS/USERS/bea/drosophila/"
+        in_script_dir = "/data/RESULTS/PROJECTS/drosophila/filtered_connectors/"
+        connector_filename = os.path.abspath(os.path.join(in_script_dir, f"{skeleton_id}.csv"))
+
+    print("KKKKKKKKKKKKK ", connector_filename)
+    if os.path.isfile(connector_filename):
+        filtered_connectors = pd.read_csv(connector_filename)
+        skeleton_tree.skeleton._set_connectors(filtered_connectors)
+        split = navis.split_axon_dendrite(skeleton_tree.skeleton, metric='synapse_flow_centrality', reroot_soma=True, cellbodyfiber="soma")
+
+
+
+        # Full skeleton
+        properties(skeleton_tree, undirected, filename=f"{skeleton_id}_full.json")
+
+        # Split skeleton
+        dendrite_skeleton = split[(split.compartment == 'dendrite')][0]
+        axon_skeleton = split[(split.compartment == 'axon')][0]
+
+        # Axon skeleton
+        skeleton_tree_axon = SkeletonTree.from_skeleton(skeleton=axon_skeleton, skeleton_type="axon", undirected=undirected, scaled_coords=skeleton_tree.scaled_coords)
+        properties(skeleton_tree_axon, undirected, filename=f"{skeleton_id}_axon.json")
+
+        # Dendrite skeleton
+        skeleton_tree_dendrite = SkeletonTree.from_skeleton(skeleton=dendrite_skeleton, skeleton_type="dendrite", undirected=undirected, scaled_coords=skeleton_tree.scaled_coords)
+        properties(skeleton_tree_dendrite, undirected, filename=f"{skeleton_id}_dendrite.json")
+
+
 
 # NOTE: File structure: 
     # ./data/{directed or undirected}/{tree_properties or c_values}/{skeleton_id}_full.json
@@ -46,8 +188,7 @@ else:
 # SKELETON_ID = 720575940628446888
 
 # SKELETON_ID = 720575940608945163
-SKELETON_ID = 720575940638111872
-# SKELETON_ID = 720575940661305217
+SKELETON_ID = 720575940661305217
 
 processed = []
 if os.path.exists("processed.txt"):
@@ -100,27 +241,6 @@ def run_with_timeout(func, timeout, *args, **kwargs):
         return True # Indicate successful completion
 
 
-def properties(skeleton_tree: SkeletonTree, undirected, filename=None):
-    if filename is not None:
-        if undirected:
-            dir_val = "undirected"
-        else:
-            dir_val = "directed"
-
-        if sys.platform == "darwin":
-            file_with_path = os.path.abspath(os.path.join(script_dir, f"../data/{dir_val}/tree_properties/{filename}"))
-        else:
-            file_with_path = os.path.abspath(os.path.join(script_dir, f"data/{dir_val}/tree_properties/{filename}"))
-    
-        try:
-            with open(file_with_path, 'w') as fp:
-                json.dump(skeleton_tree.tree_properties, fp, cls=NpEncoder, indent=4)
-        except TypeError as e:
-            print(f"Error: {e}")
-    else:
-        print("--- Tree Properties ---")
-        for key, value in skeleton_tree.tree_properties.items():
-            print(f"{key}: {value}")
 
 def add_synapse_properties(skeleton_tree_p: SkeletonTree):
     synapses = Synapses(skeleton_tree_p)
@@ -243,18 +363,18 @@ def limit_cpu_usage(process, num_cpus=4):
 def process_all_w_timeout():
     # Set strict CPU limit
     NUM_CPUS = 4  # Strict limit to 4 CPUs
+    undirected = True
     
     timeout = 180
     generate_directory_structure()
-    undirected = True
     
     ids = [int(x.split('.swc')[0]) for x in os.listdir(SKELETONS_DIR) if x.endswith('.swc')]
     ids = ids[:10]
     
     # Use set for faster lookups
     processed = set()
-    if os.path.exists("processed.txt"):
-        with open('processed.txt', 'r') as file:
+    if os.path.exists("processed_fractal_dimension.txt"):
+        with open('processed_fractal_dimension.txt', 'r') as file:
             processed = {int(line.strip().lstrip('>')) for line in file}
 
     try:
@@ -290,7 +410,7 @@ def process_all_w_timeout():
                         success = result.get(timeout=timeout)
                         
                         if success:
-                            with open("processed.txt", "a") as f:
+                            with open("processed_fractal_dimension.txt", "a") as f:
                                 f.write(f"{id}\n")
                             chunk_results.append((id, True))
                         else:
