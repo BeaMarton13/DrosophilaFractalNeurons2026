@@ -35,3 +35,4 @@ def plot(counts, sizes, coeffs, fname):
     plt.legend()
     # plt.show()
     plt.savefig(fname, dpi=300, bbox_inches='tight')
+    plt.close('all')

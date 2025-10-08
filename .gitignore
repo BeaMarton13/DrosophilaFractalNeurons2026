@@ -209,6 +209,9 @@ __marimo__/
 data/
 input_data/
 figures/
+figures_all/
+figures_logscale/
+figures_log_scale/
 filtered_connectors/
 .DS_Store
 *.pdf

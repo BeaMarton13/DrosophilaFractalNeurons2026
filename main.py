@@ -34,7 +34,7 @@ if sys.platform == "darwin":
 else:
     # We will call this script_dir for easier usage
     script_dir = "/data/RESULTS/USERS/bea/drosophila/"
-    in_script_dir = "/data/RESULTS/PROJECTS/drosophila/input_data/"
+    in_script_dir = "/data/RESULTS/PROJECTS/drosophila/input_data/full"
     SKELETONS_DIR = in_script_dir
 
 # path_to_skeletons = "./sk_lod1_783_healed"
