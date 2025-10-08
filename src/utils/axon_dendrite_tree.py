@@ -1,6 +1,13 @@
 import os
 import json
 
+def _get_skeleton_ids(filedir):
+    ids = []
+    for filename in os.listdir(filedir):
+        ids.append(filename.split('/')[-1].split('_')[0])
+
+    return list(set(ids))
+
 
 class AxonDendriteTree:
     def __init__(self, id, tree_properties=None, c_values=None, tree_type=None):
@@ -9,6 +16,15 @@ class AxonDendriteTree:
         self.c_values = c_values
         self.tree_type = tree_type
 
+
+    @property
+    def fractal_dimension(self):
+        try:
+            fractal_dimension = self.tree_properties['fractal_dimension'] if self.tree_properties else None
+        except:
+            fractal_dimension = 0
+        return fractal_dimension
+    
 
     @property
     def num_nodes(self):
@@ -68,7 +84,7 @@ class AxonDendriteTree:
     @classmethod
     def from_properties_csv(cls, tree_filepath, c_filepath, id=None, tree_type=None):
         if id is None:
-            id = tree_filepath.split('.')[-1].split('_')[0]
+            id = tree_filepath.split('/')[-1].split('.')[0].split('_')[0]
         with open(tree_filepath, 'r') as f:
             tree_json = f.read()
         with open(c_filepath, 'r') as f:
@@ -113,19 +129,23 @@ class AxonDendriteForest():
                 property_list.append(getattr(tree, property_name))
         return property_list
     
+    
 
     @classmethod
     def build_forest_from_directory(cls, tree_dir, c_dir, undirected=True):
         tree_type = 'undirected' if undirected else 'directed'
         forest = cls(tree_type)
-        for filename in os.listdir(tree_dir):
-            if filename.endswith('.json'):
-                tree_filepath = os.path.join(tree_dir, filename)
-                c_filepath = os.path.join(c_dir, filename)
-                tree = AxonDendriteTree.from_properties_csv(tree_filepath, c_filepath, tree_type=tree_type)
-                if 'axon' in filename:
+        ids = _get_skeleton_ids(tree_dir)
+        for id in ids:
+            tree_filepath_axon = f'{tree_dir}/{id}_axon.json'
+            c_filepath_axon = f'{c_dir}/{id}_axon.json'
+            tree_filepath_dendrite = f'{tree_dir}/{id}_dendrite.json'
+            c_filepath_dendrite = f'{c_dir}/{id}_dendrite.json'
+            if os.path.exists(tree_filepath_axon) and os.path.exists(c_filepath_axon):
+                if os.path.exists(tree_filepath_dendrite) and os.path.exists(c_filepath_dendrite):
+                    tree = AxonDendriteTree.from_properties_csv(tree_filepath_axon, c_filepath_axon, tree_type=tree_type, id=id)
                     forest.add_axon_tree(tree)
-                elif 'dendrite' in filename:
+                    tree = AxonDendriteTree.from_properties_csv(tree_filepath_dendrite, c_filepath_dendrite, tree_type=tree_type, id=id)
                     forest.add_dendrite_tree(tree)
         return forest
 
