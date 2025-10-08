@@ -5,17 +5,14 @@ import json
 import gc
 import multiprocessing
 from tqdm import tqdm
-import psutil
 import pandas as pd
 import numpy as np
 
 # --- Import your modules ---
 import navis
-from fafbseg import flywire
 from src.utils.synapses import Synapses
-from src.utils.plot import plot_tree_digraph
 from src.export_properties_main import generate_directory_structure
-from src.utils.fractal_dimension import fractal_dimension_sparse, plot
+from src.utils.fractal_dimension import fractal_dimension_sparse
 
 # ===============================
 # Configuration
