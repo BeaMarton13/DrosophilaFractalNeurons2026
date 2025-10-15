@@ -27,7 +27,8 @@ class SkeletonTree:
             undirected: bool = False, 
             skeleton: navis.Neuron = None, 
             autosave: bool = False,
-            scaled_coords: list = None
+            scaled_coords: list = None,
+            with_exit=False
         ):
         """
         Initializes the SkeletonTree with the given directory and skeleton ID.
@@ -48,8 +49,12 @@ class SkeletonTree:
         self.undirected = undirected
 
         self.scaled_coords = scaled_coords
+        self.distances = None
 
-        self.fractal_dimension = self._calculate_fractal_dimension(self.scaled_coords, with_plot=True)
+        self.fractal_dimension = self._calculate_fractal_dimension(self.scaled_coords)
+
+        if with_exit:
+            exit()
 
         if self.undirected:
             self.skeleton_nx_tree = self.skeleton_nx.to_undirected()
@@ -274,37 +279,42 @@ class SkeletonTree:
             "zero_eigenvalues_count": self.num_zero_eigenvalues / self.num_nodes if self.num_nodes > 0 else 0,
             "eigenvalue_geometric_multiplicity": self.eigenvalue_geometric_multiplicity / self.num_nodes if self.num_nodes > 0 else 0,
         }
-    
-    def _calculate_fractal_dimension(self, scaled_coords, with_plot=False):
+
+   
+    def calculate_scaled_coords(self, coords):
+        mins = coords.min(axis=0, keepdims=True)
+        maxs = coords.max(axis=0, keepdims=True)
+        shifted = coords - mins
+        scale = (maxs - mins).max()
+        return shifted / scale
+   
+    def _calculate_fractal_dimension(self, scaled_coords, fname=None):
         self.coords = self.skeleton.nodes[['x', 'y', 'z']].values
-        scaler = MinMaxScaler()
+        # from sklearn.preprocessing import MinMaxScaler
+        # scaler = MinMaxScaler()
         if scaled_coords is None:
-            self.scaled_coords = scaler.fit_transform(self.coords)
+            self.scaled_coords = self.calculate_scaled_coords(self.coords)
+        distances = self._calculate_scaled_lengths(self.scaled_coords)
+        self.max_dist = max(distances)
+        self.avg_dist = sum(distances) / len(distances)
 
-        if with_plot:
-            coeffs, sizes, counts = fractal_dimension_sparse(scaler.fit_transform(self.coords), 2 * max(self._calculate_scaled_lengths(self.scaled_coords)))
-            plot(counts, sizes, coeffs, fname=f"fractal_dimension{self.skeleton_type}.png")
 
-        coeffs, _, _ = fractal_dimension_sparse(scaler.fit_transform(self.coords), 2 * max(self._calculate_scaled_lengths(self.scaled_coords)))
+        if fname is not None:
+            coeffs, sizes, counts = fractal_dimension_sparse(self.calculate_scaled_coords(self.coords), self.max_dist)
+            plot(counts, sizes, coeffs, fname=fname)
+            # plot(counts, sizes, coeffs, fname=f"fractal_dimension{self.skeleton_type}.png")
+        else:
+            coeffs, _, _ = fractal_dimension_sparse(self.calculate_scaled_coords(self.coords), self.max_dist)
         return coeffs[0]
-    
+
     def _calculate_scaled_lengths(self, scaled_points):
         distances = []
-        adjacency = self.skeleton.get_igraph().get_adjacency()
-        neighbor_pairs = []
-        for idx, lst in enumerate(adjacency):
-            try:
-                p_idx = next((i for i, x in enumerate(lst) if x), None)
-            except:
-                p_idx = -1
-
-
-            neighbor_pairs.append([idx, p_idx])
         for idx, parent in zip(self.skeleton.nodes['node_id'], self.skeleton.nodes['parent_id']):
             if parent != -1:
                 distances.append(np.linalg.norm(scaled_points[parent - 1] - scaled_points[idx - 1]))
         return distances
     
+
     # --- Skeleton Reading and Preparation ---
     def _read_skeleton(self, skeletons_dir: str) -> navis.Neuron:
         """
@@ -549,5 +559,5 @@ class SkeletonTree:
         return max_key, max_value
 
     @classmethod
-    def from_skeleton(cls, skeleton: navis.Neuron, skeleton_type:str, undirected: bool, autosave: bool = False, scaled_coords: list = None):
-        return cls("dummy_value", skeleton.id, skeleton=skeleton, skeleton_type=skeleton_type, undirected=undirected, autosave=autosave, scaled_coords=scaled_coords)
+    def from_skeleton(cls, skeleton: navis.Neuron, skeleton_type:str, undirected: bool, autosave: bool = False, scaled_coords: list = None, with_exit: bool = False):
+        return cls("dummy_value", skeleton.id, skeleton=skeleton, skeleton_type=skeleton_type, undirected=undirected, autosave=autosave, scaled_coords=scaled_coords, with_exit=with_exit)

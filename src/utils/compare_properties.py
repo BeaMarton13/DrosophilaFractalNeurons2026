@@ -31,19 +31,19 @@ class CompareProperties:
         margin = (vmax - vmin) * margin_ratio
         return [vmin - margin, vmax + margin]
     
-    def plot_histogram(self, property_name, tree_type, bins=30, log_scale_x=False, log_scale_y=False, save_path=None, x_min=None, x_max=None):
+    def plot_histogram(self, property, property_name, tree_type, bins=100, log_scale_x=False, log_scale_y=False, save_path=None, x_min=None, x_max=None):
         plt.figure(figsize=(10, 6))
 
         # --- Data preparation ---
         if tree_type == "both":
-            axon_props_raw = self.axon_dendrite_forest.get_property_list(property_name, tree_type='axon')
-            dendrite_props_raw = self.axon_dendrite_forest.get_property_list(property_name, tree_type='dendrite')
+            axon_props_raw = self.axon_dendrite_forest.get_property_list(property, tree_type='axon')
+            dendrite_props_raw = self.axon_dendrite_forest.get_property_list(property, tree_type='dendrite')
 
             axon_props = []
             dendrite_props = []
 
             # Fractal dimension filtering (retains pairs where either is >= 1)
-            if property_name == 'fractal_dimension':
+            if property == 'fractal_dimension':
                 for i in range(len(axon_props_raw)):
                     # Added check for list bounds for safety, though typically they should be the same length
                     if i < len(dendrite_props_raw) and \
@@ -104,8 +104,6 @@ class CompareProperties:
 
             if log_scale_x:
                 plt.xscale('log')
-                x_label += ' (Log Scale)'
-                title_parts.append('(Log X)')
             # --- X-axis Limit Setting (Both) ---
             if x_min is not None or x_max is not None:
                 plt.xlim(x_min, x_max)
@@ -115,8 +113,6 @@ class CompareProperties:
             
             if log_scale_y:
                 plt.yscale('log')
-                y_label += ' (Log Scale)'
-                title_parts.append('(Log Y)')
 
             # --- FONT SIZE MODIFICATIONS ---
             plt.xlabel(x_label, fontsize=20)   # Set X-axis label font size
@@ -128,7 +124,7 @@ class CompareProperties:
             plt.legend(fontsize=16)            # Set Legend font size
             
         else: # tree_type is 'axon' or 'dendrite'
-            properties_raw = self.axon_dendrite_forest.get_property_list(property_name, tree_type=tree_type)
+            properties_raw = self.axon_dendrite_forest.get_property_list(property, tree_type=tree_type)
             properties = properties_raw
 
             # Filter non-positive values ONLY if X-axis is log
@@ -153,8 +149,6 @@ class CompareProperties:
 
             if log_scale_x:
                 plt.xscale('log')
-                x_label += ' (Log Scale)'
-                title_parts.append('(Log X)')
             
             # --- X-axis Limit Setting (Single) ---
             if x_min is not None or x_max is not None:
@@ -166,15 +160,13 @@ class CompareProperties:
 
             if log_scale_y:
                 plt.yscale('log')
-                y_label += ' (Log Scale)'
-                title_parts.append('(Log Y)')
 
             # --- FONT SIZE MODIFICATIONS ---
             plt.xlabel(x_label, fontsize=20)   # Set X-axis label font size
             plt.ylabel(y_label, fontsize=20)   # Set Y-axis label font size
             plt.title(f"{' '.join(title_parts)} of {property_name} for {tree_type} trees", fontsize=24) # Set Title font size
 
-
+        plt.tick_params(axis='both', which='major', labelsize=16)
         if save_path:
             plt.savefig(save_path, bbox_inches='tight')
         else:
@@ -184,6 +176,8 @@ class CompareProperties:
 # -----------------------------------------------------------------------------
     def plot_pairwise(
         self,
+        property_x,
+        property_y,
         property_name_x,
         property_name_y,
         log_scale_x=False,
@@ -193,15 +187,15 @@ class CompareProperties:
         x_max=None,
     ):
         # --- Data Retrieval ---
-        axon_props_x = self.axon_dendrite_forest.get_property_list(property_name_x, tree_type='axon')
-        dendrite_props_y = self.axon_dendrite_forest.get_property_list(property_name_y, tree_type='dendrite')
+        axon_props_x = self.axon_dendrite_forest.get_property_list(property_x, tree_type='axon')
+        dendrite_props_y = self.axon_dendrite_forest.get_property_list(property_y, tree_type='dendrite')
 
         min_len = min(len(axon_props_x), len(dendrite_props_y))
         x_raw = axon_props_x[:min_len]
         y_raw = dendrite_props_y[:min_len]
 
         # --- Fractal Dimension Filtering ---
-        if property_name_x == 'fractal_dimension':
+        if property_x == 'fractal_dimension':
             x_temp, y_temp = [], []
             for i in range(len(x_raw)):
                 if (1 <= x_raw[i] <= 3) and (1 <= y_raw[i] <= 3):
@@ -232,8 +226,6 @@ class CompareProperties:
         # --- X-axis Scaling and Range ---
         if log_scale_x:
             plt.xscale('log')
-            x_label += ' (Log Scale)'
-            title_parts.append('(Log X)')
         else:
             # Apply manual limits if provided
             if x_min is not None and x_max is not None:
@@ -244,8 +236,6 @@ class CompareProperties:
         # --- Y-axis Scaling and Range ---
         if log_scale_y:
             plt.yscale('log')
-            y_label += ' (Log Scale)'
-            title_parts.append('(Log Y)')
         else:
             if x_min is not None and x_max is not None:
                 plt.xlim(x_min, x_max)
@@ -257,8 +247,6 @@ class CompareProperties:
         # --- Y-axis Scaling and Range ---
         if log_scale_y:
             plt.yscale('log')
-            y_label += ' (Log Scale)'
-            title_parts.append('(Log Y)')
         else:
             if x_min is not None and x_max is not None:
                 plt.ylim(x_min, x_max)
@@ -271,6 +259,7 @@ class CompareProperties:
         plt.title(f"{' '.join(title_parts)}: Axon {property_name_x} vs Dendrite {property_name_y}", fontsize=24)
         plt.gca().tick_params(axis='both', which='major', labelsize=16)
 
+        plt.tick_params(axis='both', which='major', labelsize=16)
         # --- Save or Show ---
         if save_path:
             plt.savefig(save_path, bbox_inches='tight')
@@ -279,16 +268,16 @@ class CompareProperties:
         plt.close()
 
 # -----------------------------------------------------------------------------
-    def plot_indexed_pair(self, property_name, log_scale_x=False, log_scale_y=False, save_path=None):
+    def plot_indexed_pair(self, property, property_name, log_scale_x=False, log_scale_y=False, save_path=None):
         # NOTE: log_scale_x is not relevant here as the X-axis is the integer index (n).
-        axon_values_raw = self.axon_dendrite_forest.get_property_list(property_name, tree_type='axon')
-        dendrite_values_raw = self.axon_dendrite_forest.get_property_list(property_name, tree_type='dendrite')
+        axon_values_raw = self.axon_dendrite_forest.get_property_list(property, tree_type='axon')
+        dendrite_values_raw = self.axon_dendrite_forest.get_property_list(property, tree_type='dendrite')
         
         axon_values = []
         dendrite_values = []
 
         # Apply fractal dimension filtering
-        if property_name == 'fractal_dimension':
+        if property == 'fractal_dimension':
             for i in range(len(axon_values_raw)):
                 if (axon_values_raw[i] >= 1 and dendrite_values_raw[i] >= 1) and (axon_values_raw[i] <= 3 and dendrite_values_raw[i] <= 3):
                     axon_values.append(axon_values_raw[i])
@@ -316,8 +305,6 @@ class CompareProperties:
 
         if log_scale_y:
             plt.yscale('log')
-            y_label += ' (Log Scale)'
-            title_parts.append('(Log Y)')
             # Set Y limits for log scale
             if all_values:
                 plt.ylim(min(v for v in all_values if v > 0) * 0.9, max(all_values) * 1.1)
@@ -329,6 +316,7 @@ class CompareProperties:
         plt.title(f"{' '.join(title_parts)} of {property_name}: Axon (red) & Dendrite (green)")
         plt.legend()
 
+        plt.tick_params(axis='both', which='major', labelsize=16)
         if save_path:
             plt.savefig(save_path, bbox_inches='tight')
         else:
@@ -339,11 +327,11 @@ class CompareProperties:
     # NOTE: plot_diff and plot_diff_histogram should remain linear
     # as the difference can be zero or negative, making log scales invalid/misleading.
 
-    def plot_diff(self, property_name, log_scale_x=False, log_scale_y=False, save_path=None):
-        axon_values = self.axon_dendrite_forest.get_property_list(property_name, tree_type='axon')
-        dendrite_values = self.axon_dendrite_forest.get_property_list(property_name, tree_type='dendrite')
+    def plot_diff(self, property, property_name, log_scale_x=False, log_scale_y=False, save_path=None):
+        axon_values = self.axon_dendrite_forest.get_property_list(property, tree_type='axon')
+        dendrite_values = self.axon_dendrite_forest.get_property_list(property, tree_type='dendrite')
         
-        if property_name == 'fractal_dimension':
+        if property == 'fractal_dimension':
             axon_props_temp = []
             dendrite_props_temp = []
             for i in range(len(axon_values)):
@@ -363,17 +351,18 @@ class CompareProperties:
         plt.title(f'Indexed difference in {property_name} (Axon - Dendrite)')
         plt.legend()
 
+        plt.tick_params(axis='both', which='major', labelsize=16)
         if save_path:
             plt.savefig(save_path, bbox_inches='tight')
         else:
             plt.show()
         plt.close()
 
-    def plot_diff_histogram(self, property_name, log_scale_x=False, log_scale_y=False, bins=30, save_path=None):
-        axon_values = self.axon_dendrite_forest.get_property_list(property_name, tree_type='axon')
-        dendrite_values = self.axon_dendrite_forest.get_property_list(property_name, tree_type='dendrite')
+    def plot_diff_histogram(self, property, property_name, log_scale_x=False, log_scale_y=False, bins=30, save_path=None):
+        axon_values = self.axon_dendrite_forest.get_property_list(property, tree_type='axon')
+        dendrite_values = self.axon_dendrite_forest.get_property_list(property, tree_type='dendrite')
         
-        if property_name == 'fractal_dimension':
+        if property == 'fractal_dimension':
             axon_props_temp = []
             dendrite_props_temp = []
             for i in range(len(axon_values)):
@@ -391,6 +380,7 @@ class CompareProperties:
         plt.xlabel('Difference')
         plt.ylabel('Frequency')
 
+        plt.tick_params(axis='both', which='major', labelsize=16)
         if save_path:
             plt.savefig(save_path, bbox_inches='tight')
         else:
@@ -433,9 +423,9 @@ class ComparePropertiesPlotly:
             if log_scale:
                 fig.update_xaxes(type='log') 
                 fig.update_layout(
-                    title_text=f'Log Scale Histogram of {property_name}',
-                    xaxis_title=f'{property_name} (Log Scale)',
-                    yaxis_title='Frequency (Linear Scale)',
+                    title_text=f'Histogram of {property_name}',
+                    xaxis_title=f'{property_name}',
+                    yaxis_title='Frequency',
                     legend_title='Tree Type',
                 )
             else:
@@ -460,9 +450,9 @@ class ComparePropertiesPlotly:
             if log_scale:
                 fig.update_xaxes(type='log')
                 fig.update_layout(
-                    title_text=f'Log Scale Histogram of {property_name} for {tree_type} trees',
-                    xaxis_title=f'{property_name} (Log Scale)',
-                    yaxis_title='Frequency (Linear Scale)',
+                    title_text=f'Histogram of {property_name} for {tree_type} trees',
+                    xaxis_title=f'{property_name}',
+                    yaxis_title='Frequency',
                 )
             else:
                 fig.update_layout(
@@ -504,9 +494,9 @@ class ComparePropertiesPlotly:
             fig.update_xaxes(type='log')
             fig.update_yaxes(type='log')
             fig.update_layout(
-                title_text=f'Pairwise scatter (Log Log): Axon {property_name_x} vs Dendrite {property_name_y}',
-                xaxis_title=f'Axon {property_name_x} (Log Scale)',
-                yaxis_title=f'Dendrite {property_name_y} (Log Scale)',
+                title_text=f'Pairwise scatter: Axon {property_name_x} vs Dendrite {property_name_y}',
+                xaxis_title=f'Axon {property_name_x}',
+                yaxis_title=f'Dendrite {property_name_y}',
             )
         else:
             fig.update_layout(
@@ -559,9 +549,9 @@ class ComparePropertiesPlotly:
         if log_scale:
             fig.update_yaxes(type='log')
             fig.update_layout(
-                title_text=f'Indexed values (Log Y): {property_name}',
-                xaxis_title='Index (n) (Linear Scale)',
-                yaxis_title=f'{property_name} (Log Scale)',
+                title_text=f'Indexed values: {property_name}',
+                xaxis_title='Index (n)',
+                yaxis_title=f'{property_name}',
                 legend_title='Tree Type',
             )
         else:
@@ -663,13 +653,26 @@ if __name__ == "__main__":
         res_dir = "/data/RESULTS/USERS/bea/drosophila/"
         save_dir = os.path.abspath(os.path.join(res_dir, f"{foldername}"))
 
+    property_to_name = {
+        "fractal_dimension": "Fractal Dimension",
+        "num_nodes": "Number of Nodes",
+        "num_edges": "Number of Edges",
+        "num_leaf_nodes": "Number of Leaf Nodes",
+        "height": "Height",
+        "max_width": "Maximum Width",
+        "cable_length": "Cable Length (nm)",
+        "num_filtered_pre_synapses": "Number of Pre-synapses",
+        "num_filtered_post_synapses": "Number of Post-synapses",
+        "c_value": "C-value"
+    }
+
     print(properties)
     for property in properties:
-        comparator.plot_histogram(property, tree_type='both', bins=100, save_path=generate_savefig_path(property, tree_type, 'histogram', save_dir, html=False), log_scale_x=log_scale_x, log_scale_y=log_scale_y, x_min=10)
-        comparator.plot_pairwise(property, property, save_path=generate_savefig_path(property, tree_type, 'pairwise', save_dir, html=False), log_scale_x=log_scale_x, log_scale_y=log_scale_y)
-        comparator.plot_indexed_pair(property, save_path=generate_savefig_path(property, tree_type, 'indexed_pair', save_dir, html=False), log_scale_x=log_scale_x, log_scale_y=log_scale_y)
-        comparator.plot_diff(property, save_path=generate_savefig_path(property, tree_type, 'diff', save_dir, html=False), log_scale_x=log_scale_x, log_scale_y=log_scale_y)
-        comparator.plot_diff_histogram(property, bins=100, save_path=generate_savefig_path(property, tree_type, 'diff_histogram', save_dir, html=False), log_scale_x=log_scale_x, log_scale_y=log_scale_y)
+        comparator.plot_histogram(property, property_to_name[property], tree_type='both', bins=100, save_path=generate_savefig_path(property, tree_type, 'histogram', save_dir, html=False), log_scale_x=log_scale_x, log_scale_y=log_scale_y, x_min=10)
+        comparator.plot_pairwise(property, property, property_to_name[property], property_to_name[property], property, save_path=generate_savefig_path(property, tree_type, 'pairwise', save_dir, html=False), log_scale_x=log_scale_x, log_scale_y=log_scale_y)
+        comparator.plot_indexed_pair(property, property_to_name[property], save_path=generate_savefig_path(property, tree_type, 'indexed_pair', save_dir, html=False), log_scale_x=log_scale_x, log_scale_y=log_scale_y)
+        comparator.plot_diff(property, property_to_name[property], save_path=generate_savefig_path(property, tree_type, 'diff', save_dir, html=False), log_scale_x=log_scale_x, log_scale_y=log_scale_y)
+        comparator.plot_diff_histogram(property, property_to_name[property], bins=100, save_path=generate_savefig_path(property, tree_type, 'diff_histogram', save_dir, html=False), log_scale_x=log_scale_x, log_scale_y=log_scale_y)
 
         # comparator_plotly.plot_histogram(property, tree_type='both', bins=100, save_path=generate_savefig_path(property, tree_type, 'histogram', save_dir, html=True), log_scale=log_scale)
         # comparator_plotly.plot_pairwise(property, property, save_path=generate_savefig_path(property, tree_type, 'pairwise', save_dir, html=True), log_scale=log_scale)

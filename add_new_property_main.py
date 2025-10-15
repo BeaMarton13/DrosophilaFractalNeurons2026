@@ -17,7 +17,7 @@ from src.utils.fractal_dimension import fractal_dimension_sparse
 # ===============================
 # Configuration
 # ===============================
-NUM_CPUS = 4
+NUM_CPUS = 64
 TIMEOUT = 120  # seconds per skeleton
 
 if sys.platform == "darwin":
@@ -58,14 +58,24 @@ class SkeletonTree:
     def _read_skeleton(self, skeletons_dir):
         return navis.read_swc(os.path.join(skeletons_dir, f"{self.skeleton_id}.swc"))
 
+   
+    def calculate_scaled_coords(self, coords):
+        mins = coords.min(axis=0, keepdims=True)
+        maxs = coords.max(axis=0, keepdims=True)
+        shifted = coords - mins
+        scale = (maxs - mins).max()
+        return shifted / scale
+   
     def _calculate_fractal_dimension(self, scaled_coords, with_plot=False):
         self.coords = self.skeleton.nodes[['x', 'y', 'z']].values
-        from sklearn.preprocessing import MinMaxScaler
-        scaler = MinMaxScaler()
+        # from sklearn.preprocessing import MinMaxScaler
+        # scaler = MinMaxScaler()
         if scaled_coords is None:
-            self.scaled_coords = scaler.fit_transform(self.coords)
+            self.scaled_coords = self.calculate_scaled_coords(self.coords)
         distances = self._calculate_scaled_lengths(self.scaled_coords)
-        coeffs, _, _ = fractal_dimension_sparse(scaler.fit_transform(self.coords), 2 * max(distances))
+        self.max_dist = max(distances)
+        self.avg_dist = sum(distances) / len(distances)
+        coeffs, _, _ = fractal_dimension_sparse(self.calculate_scaled_coords(self.coords), self.max_dist)
         return coeffs[0]
 
     def _calculate_scaled_lengths(self, scaled_points):
@@ -162,6 +172,17 @@ def process_skeleton_wrapper(skeleton_id, undirected, skeletons_dir):
             # Dendrite skeleton
             skeleton_tree_dendrite = SkeletonTree.from_skeleton(skeleton=dendrite_skeleton, skeleton_type="dendrite", undirected=undirected, scaled_coords=skeleton_tree.scaled_coords)
             properties(skeleton_tree_dendrite, undirected, filename=f"{skeleton_id}_dendrite.json")
+
+
+            with open("distances.txt", "a") as f_full:
+                f_full.write(f"{skeleton_tree.max_dist} - {skeleton_tree.skeleton_id}\n")
+
+            with open("avg_distances.txt", "a") as f_full:
+                f_full.write(f"{skeleton_tree.max_dist - skeleton_tree.avg_dist} - {skeleton_tree.avg_dist} - {skeleton_tree.skeleton_id}\n")
+
+            with open("filtered_skeleton_ids(025).txt", "a") as f_full:
+                if skeleton_tree.max_dist <= 0.25:
+                    f_full.write(f"{skeleton_tree.skeleton_id}\n")
 
     except Exception as e:
         print(e)

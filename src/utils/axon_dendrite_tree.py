@@ -9,6 +9,13 @@ def _get_skeleton_ids(filedir):
     return list(set(ids))
 
 
+def _get_filtered_skeleton_ids():
+    file_w_path = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), f"../../filtered_skeleton_ids(03).txt"))
+    with open(file_w_path, 'r') as f:
+        ids = [line.strip() for line in f if line.strip()]
+    return ids
+
+
 class AxonDendriteTree:
     def __init__(self, id, tree_properties=None, c_values=None, tree_type=None):
         self.id = id
@@ -135,7 +142,8 @@ class AxonDendriteForest():
     def build_forest_from_directory(cls, tree_dir, c_dir, undirected=True):
         tree_type = 'undirected' if undirected else 'directed'
         forest = cls(tree_type)
-        ids = _get_skeleton_ids(tree_dir)
+        # ids = _get_skeleton_ids(tree_dir)
+        ids = _get_filtered_skeleton_ids()
         for id in ids:
             tree_filepath_axon = f'{tree_dir}/{id}_axon.json'
             c_filepath_axon = f'{c_dir}/{id}_axon.json'
@@ -147,6 +155,8 @@ class AxonDendriteForest():
                     forest.add_axon_tree(tree)
                     tree = AxonDendriteTree.from_properties_csv(tree_filepath_dendrite, c_filepath_dendrite, tree_type=tree_type, id=id)
                     forest.add_dendrite_tree(tree)
+            else:
+                print(f"Missing files for skeleton ID {id}, skipping. \naxon files: {os.path.exists(tree_filepath_axon)}, {os.path.exists(c_filepath_axon)}; \n{tree_filepath_axon} and {c_filepath_axon} \ndendrite files: {os.path.exists(tree_filepath_dendrite)}, {os.path.exists(c_filepath_dendrite)}\n{tree_filepath_dendrite} and {c_filepath_dendrite}")
         return forest
 
     
