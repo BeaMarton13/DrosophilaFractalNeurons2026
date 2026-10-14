@@ -1,13 +1,24 @@
-import networkx as nx
-import navis
-from fafbseg import flywire
-import numpy as np
 import os
+
+
+# Disable internal parallelism to prevent subprocess spawning
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+
+import navis
+navis.set_pbars(hide=True)  # Disable progress bars
+navis.config.parallel = False  # Disable navis parallelism if available
+
+import numpy as np
 import sys
-from sklearn.preprocessing import MinMaxScaler
+import math
+import json
+import networkx as nx
 
 from src.utils.fractal_dimension import fractal_dimension_sparse, plot
-
 
 
 if sys.platform == "darwin":
@@ -28,30 +39,41 @@ class SkeletonTree:
             skeleton: navis.Neuron = None, 
             autosave: bool = False,
             scaled_coords: list = None,
-            with_exit=False
+            with_exit=False,
+            property_dict=None,
+            lightweight=False  # NEW: skip heavy computations
         ):
         """
         Initializes the SkeletonTree with the given directory and skeleton ID.
-        
-        Args:
-            skeletons_dir (str): Directory where skeleton files are stored.
-            skeleton_id (int): ID of the skeleton to prepare.
         """
         self.skeleton_id = skeleton_id
         if skeleton is None:
-            # Read skeleton from the specified directory
             self.skeleton = self._read_skeleton(skeletons_dir)
         else:
             self.skeleton = skeleton
-        self.skeleton_nx = self._prepare_skeleton()
-        self.skeleton_nx_tree = self.skeleton_nx.copy()
+        
         self.skeleton_type = skeleton_type
         self.undirected = undirected
-
         self.scaled_coords = scaled_coords
         self.distances = None
 
-        self.fractal_dimension = self._calculate_fractal_dimension(self.scaled_coords)
+        if property_dict is not None:
+            self.fractal_dimension = property_dict.get("fractal_dimension", None)
+        else:
+            self.fractal_dimension = None  # Calculate lazily if needed
+
+        # Skip heavy computations if lightweight mode
+
+
+        # Heavy computations - only if not lightweight
+        self.skeleton_nx = self._prepare_skeleton()
+        self.skeleton_nx_tree = self.skeleton_nx.copy()
+        if lightweight:
+            self.level_w_max_width = None
+            self.max_width = None
+            self.tree_properties = {}
+            self.c_value_properties = {}
+            return
 
         if with_exit:
             exit()
@@ -61,10 +83,12 @@ class SkeletonTree:
         self.level_w_max_width, self.max_width = self.calculate_max_width_at_level()
         self.tree_properties = self.build_tree_properties()
         self.c_value_properties = self.build_c_value_properties()
+        
         if autosave:
             full_path = os.path.join(AUTOSAVE_PATH, f"{skeleton_type}/{self.skeleton_id}.swc")
             if not os.path.exists(full_path):
                 navis.write_swc(self.skeleton, full_path)
+
 
     @property
     def id(self) -> int:
@@ -262,6 +286,15 @@ class SkeletonTree:
             "cable_length": self.cable_length,
             "fractal_dimension": self.fractal_dimension
         }
+    
+    def set_tree_properties(self, properties: dict):
+        """
+        Sets the properties of the skeleton tree.
+        
+        Args:
+            properties (dict): A dictionary of properties to set.
+        """
+        self.fractal_dimension = properties.get("fractal_dimension", None)
 
     def build_c_value_properties(self) -> dict:
         """
@@ -280,39 +313,99 @@ class SkeletonTree:
             "eigenvalue_geometric_multiplicity": self.eigenvalue_geometric_multiplicity / self.num_nodes if self.num_nodes > 0 else 0,
         }
 
-   
     def calculate_scaled_coords(self, coords):
         mins = coords.min(axis=0, keepdims=True)
         maxs = coords.max(axis=0, keepdims=True)
         shifted = coords - mins
         scale = (maxs - mins).max()
         return shifted / scale
-   
-    def _calculate_fractal_dimension(self, scaled_coords, fname=None):
+    
+    def calculate_distances(self, scaled_coords=None):
         self.coords = self.skeleton.nodes[['x', 'y', 'z']].values
-        # from sklearn.preprocessing import MinMaxScaler
-        # scaler = MinMaxScaler()
         if scaled_coords is None:
             self.scaled_coords = self.calculate_scaled_coords(self.coords)
-        distances = self._calculate_scaled_lengths(self.scaled_coords)
-        self.max_dist = max(distances)
-        self.avg_dist = sum(distances) / len(distances)
-
-
-        if fname is not None:
-            coeffs, sizes, counts = fractal_dimension_sparse(self.calculate_scaled_coords(self.coords), self.max_dist)
-            plot(counts, sizes, coeffs, fname=fname)
-            # plot(counts, sizes, coeffs, fname=f"fractal_dimension{self.skeleton_type}.png")
-        else:
-            coeffs, _, _ = fractal_dimension_sparse(self.calculate_scaled_coords(self.coords), self.max_dist)
-        return coeffs[0]
-
-    def _calculate_scaled_lengths(self, scaled_points):
+            scaled_coords = self.scaled_coords
         distances = []
         for idx, parent in zip(self.skeleton.nodes['node_id'], self.skeleton.nodes['parent_id']):
             if parent != -1:
-                distances.append(np.linalg.norm(scaled_points[parent - 1] - scaled_points[idx - 1]))
+                distances.append(np.linalg.norm(scaled_coords[parent - 1] - scaled_coords[idx - 1]))
         return distances
+
+    def _calculate_scaled_lengths(self, scaled_points):
+        distances = []
+        additional_points = []
+        for idx, parent in zip(self.skeleton.nodes['node_id'], self.skeleton.nodes['parent_id']):
+            if parent != -1:
+                distances.append(np.linalg.norm(scaled_points[parent - 1] - scaled_points[idx - 1]))
+        return distances, additional_points
+
+    def _calculate_fractal_dimension(self, scaled_coords, fname=None, recalculate=True):
+        self.coords = self.skeleton.nodes[['x', 'y', 'z']].values
+        if scaled_coords is None:
+            self.scaled_coords = self.calculate_scaled_coords(self.coords)
+            scaled_coords = self.scaled_coords
+        distances, _ = self._calculate_scaled_lengths(scaled_coords)
+        if len(distances) == 0:
+            return -1.0
+        self.max_dist = max(distances)
+        self.avg_dist = sum(distances) / len(distances)
+
+        if fname is not None:
+            tmp = fractal_dimension_sparse(self.calculate_scaled_coords(self.coords), self.max_dist, recalculate=recalculate)
+            if len(tmp) == 5:
+                coeffs, sizes, counts, sizes_filtered, counts_filtered = tmp
+                plot(counts_filtered, sizes_filtered, coeffs, fname=fname)
+                return coeffs[0]
+            else:
+                coeffs, sizes, counts = tmp
+                plot(counts, sizes, coeffs, fname=fname)
+                return coeffs[0]
+        else:
+            coeffs = fractal_dimension_sparse(self.calculate_scaled_coords(self.coords), self.max_dist, recalculate=recalculate)[0]
+            return coeffs[0]
+
+    def interpolate_3d(self, point1, point2, distance, num_segments=None):
+        """
+        Interpolates points between two 3D points (x, y, z) so that
+        the distance between consecutive points is <= `distance`.
+
+        Args:
+            point1: tuple (x1, y1, z1)
+            point2: tuple (x2, y2, z2)
+            distance: float, maximum allowed spacing between points
+
+        Returns:
+            list of tuples: [(x, y, z), ..., (x_end, y_end, z_end)]
+        """
+        x1, y1, z1 = point1
+        x2, y2, z2 = point2
+
+        if num_segments == 0:
+            return [point1, point2]
+
+        if num_segments is None:
+            # Compute total distance between points
+            total_dist = math.sqrt((x2 - x1)**2 + (y2 - y1)**2 + (z2 - z1)**2)
+
+            # If already close enough, just return endpoints
+            if total_dist <= distance:
+                return [point1, point2]
+
+            # Number of segments
+            num_segments = int(math.ceil(total_dist / distance))
+
+        # Linear interpolation for each coordinate
+        points = [
+            (
+                x1 + (x2 - x1) * i / num_segments,
+                y1 + (y2 - y1) * i / num_segments,
+                z1 + (z2 - z1) * i / num_segments
+            )
+            for i in range(num_segments + 1)
+        ]
+
+        return points
+
     
 
     # --- Skeleton Reading and Preparation ---
@@ -321,6 +414,8 @@ class SkeletonTree:
         Read a skeleton from the specified directory and skeleton ID.
         """
         return navis.read_swc(os.path.join(skeletons_dir, f'{self.skeleton_id}.swc'))
+    
+
 
     def _prepare_skeleton(self, step_size: int = 200) -> nx.DiGraph:
         """
@@ -559,5 +654,32 @@ class SkeletonTree:
         return max_key, max_value
 
     @classmethod
-    def from_skeleton(cls, skeleton: navis.Neuron, skeleton_type:str, undirected: bool, autosave: bool = False, scaled_coords: list = None, with_exit: bool = False):
-        return cls("dummy_value", skeleton.id, skeleton=skeleton, skeleton_type=skeleton_type, undirected=undirected, autosave=autosave, scaled_coords=scaled_coords, with_exit=with_exit)
+    def from_skeleton(cls, skeleton: navis.Neuron, skeleton_type:str, undirected: bool, autosave: bool = False, scaled_coords: list = None, with_exit: bool = False, lightweight: bool = False):
+        return cls("dummy_value", skeleton.id, skeleton=skeleton, skeleton_type=skeleton_type, undirected=undirected, autosave=autosave, scaled_coords=scaled_coords, with_exit=with_exit, lightweight=lightweight)
+    
+    @classmethod
+    def from_properties(cls, skeletons_dir, id, skeleton_type: str, undirected: bool, skeleton: navis.Neuron = None, lightweight: bool = False):
+        if undirected:
+            properties_dir = "/data/RESULTS/USERS/bea/drosophila/data_navis/undirected/tree_properties/"
+        else:
+            properties_dir = "/data/RESULTS/USERS/bea/drosophila/data_navis/directed/tree_properties/"
+        properties_path = os.path.join(properties_dir, f"{id}_{skeleton_type}.json")
+        if not os.path.exists(properties_path):
+            raise FileNotFoundError(f"Properties file not found: {properties_path}")
+        properties = json.load(open(properties_path, 'r'))
+        return cls(skeletons_dir, id, skeleton_type=skeleton_type, undirected=undirected, skeleton=skeleton, property_dict=properties, lightweight=lightweight)
+    
+    def cleanup(self):
+        """Explicitly free memory."""
+        if hasattr(self, 'skeleton_nx') and self.skeleton_nx is not None:
+            self.skeleton_nx.clear()
+            del self.skeleton_nx
+        if hasattr(self, 'skeleton_nx_tree') and self.skeleton_nx_tree is not None:
+            self.skeleton_nx_tree.clear()
+            del self.skeleton_nx_tree
+        if hasattr(self, 'skeleton') and self.skeleton is not None:
+            del self.skeleton
+        if hasattr(self, 'coords'):
+            del self.coords
+        if hasattr(self, 'scaled_coords'):
+            del self.scaled_coords

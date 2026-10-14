@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import math
 
 
 def boxcount_sparse(points, box_size):
@@ -8,20 +9,60 @@ def boxcount_sparse(points, box_size):
     occupied = {tuple(idx) for idx in indices}  # set for uniqueness
     return len(occupied)
 
-def fractal_dimension_sparse(scaled_points, max_dist):
+def fractal_dimension_sparse(scaled_points, max_dist, limit=1, recalculate=True):
     """Estimate fractal dimension with sparse box-counting."""
-    sizes = np.logspace(np.log10(max_dist), np.log10(1), 10)
+    sizes = np.logspace(np.log10(max_dist), np.log10(limit), 20)
 
     counts = [boxcount_sparse(scaled_points, s) for s in sizes]
-    coeffs = np.polyfit(np.log(1/sizes), np.log(counts), 1)
+    coeffs = np.polyfit(np.log10(1/sizes), np.log10(counts), 1)
+    if coeffs[0] < 0.95 and recalculate:
+        print("Recalculating fractal dimension after removing plateau points...")
+        return fractal_dimension_sparse_remove_points(scaled_points, max_dist)
     return coeffs, sizes, counts
-    # return coeffs[0]
+
+
+def fractal_dimension_sparse_remove_points(scaled_points, max_dist):
+    """Estimate fractal dimension with sparse box-counting, discarding count-plateau points at both ends."""
+    sizes = np.logspace(np.log10(max_dist), np.log10(1), 20)
+
+    counts = [boxcount_sparse(scaled_points, s) for s in sizes]
+    
+    # Convert to arrays for filtering
+    sizes = np.array(sizes)
+    counts = np.array(counts)
+    
+    # Remove plateau points: keep only the LAST occurrence of each count value
+    # (which corresponds to the smallest box size for that count)
+    mask = np.ones(len(counts), dtype=bool)
+    for i in range(len(counts) - 1):
+        if abs(counts[i] - counts[i + 1]) < 0.05:
+            mask[i] = False
+        else:
+            break 
+
+    for i in range(len(counts) - 1, 1, -1):
+        if abs(counts[i] - counts[i - 1]) < 0.05:
+            mask[i] = False
+        else:
+            break 
+    
+    sizes_filtered = sizes[mask]
+    counts_filtered = counts[mask]
+    
+    # Need at least 2 points for a fit
+    if len(counts_filtered) < 2:
+        print("Warning: Not enough varying points for fractal dimension fit")
+        return (np.nan, np.nan), sizes, counts, sizes_filtered, counts_filtered
+    
+    # Fit using FILTERED data only
+    coeffs = np.polyfit(np.log10(1/sizes_filtered), np.log10(counts_filtered), 1)
+    return coeffs, sizes_filtered, counts_filtered
 
 
 def plot(counts, sizes, coeffs, fname):
-    # Log values
-    x = np.log(1/sizes)
-    y = np.log(counts)
+    # Log10 values
+    x = np.log10(1/sizes)
+    y = np.log10(counts)
     slope, intercept = coeffs
     y_fit = slope * x + intercept
 
@@ -33,87 +74,5 @@ def plot(counts, sizes, coeffs, fname):
     plt.ylabel("log(N boxes)")
     plt.title("Fractal Dimension via Sparse Box-Counting")
     plt.legend()
-    # plt.show()
     plt.savefig(fname, dpi=300, bbox_inches='tight')
     plt.close('all')
-
-
-
-# def boxcount_sparse(points, box_size):
-#     """Sparse box counting using hash-based set of occupied cubes.
-    
-#     Args:
-#         points (np.ndarray): Array of points (N x 3) for 3D data
-#         box_size (float): Size of each box
-#     """
-#     # Add small epsilon to avoid edge cases
-#     eps = 1e-10
-#     indices = np.floor((points + eps) / box_size).astype(int)
-#     occupied = {tuple(idx) for idx in indices}
-#     return len(occupied)
-
-
-# def fractal_dimension_sparse(scaled_points, max_dist):
-#     """Estimate fractal dimension with sparse box-counting.
-#     Args:
-#         scaled_points (np.ndarray): Points in normalized [0,1] space
-#         max_dist (float): Maximum box size based on max segment length
-        
-#     Returns:
-#         tuple: (slope, sizes, counts)
-#     """
-#     # Use more box sizes and ensure minimum size isn't too small
-#     min_size = max_dist / 100  # Avoid boxes smaller than 1% of max length
-#     num_sizes = 20
-#     sizes = np.logspace(np.log10(max_dist), np.log10(min_size), num_sizes)
-    
-#     counts = [boxcount_sparse(scaled_points, s) for s in sizes]
-    
-#     # Use only valid counts (avoid log(0))
-#     valid_idx = [i for i, c in enumerate(counts) if c > 0]
-#     valid_counts = [counts[i] for i in valid_idx]
-#     valid_sizes = [sizes[i] for i in valid_idx]
-    
-#     # Fit line to log-log plot
-#     coeffs = np.polyfit(np.log(1/np.array(valid_sizes)), 
-#                        np.log(np.array(valid_counts)), 1)
-    
-#     return coeffs, valid_sizes, valid_counts
-
-
-# def plot(counts, sizes, coeffs, fname, show_validation=True):
-#     """Plot box counting results with validation.
-    
-#     Args:
-#         counts (np.ndarray): Box counts
-#         sizes (np.ndarray): Box sizes
-#         coeffs (np.ndarray): Polyfit coefficients
-#         fname (str): Output filename
-#         show_validation (bool): Show validation metrics
-#     """
-#     x = np.log(1/sizes)
-#     y = np.log(counts)
-#     slope, intercept = coeffs
-#     y_fit = slope * x + intercept
-    
-#     # Calculate R-squared
-#     r_squared = np.corrcoef(x, y)[0,1] ** 2
-    
-#     plt.figure(figsize=(8,6))
-#     plt.plot(x, y, 'o', label="Data points", markersize=4)
-#     plt.plot(x, y_fit, 'r--', label=f"Fit (D={slope:.3f})")
-    
-#     plt.xlabel("log(1/box size)")
-#     plt.ylabel("log(N boxes)")
-#     plt.title("Fractal Dimension Analysis")
-    
-#     if show_validation:
-#         plt.text(0.05, 0.95, 
-#                 f'D = {slope:.3f}\nR² = {r_squared:.3f}', 
-#                 transform=plt.gca().transAxes,
-#                 bbox=dict(facecolor='white', alpha=0.8))
-    
-#     plt.legend()
-#     plt.grid(True, alpha=0.3)
-#     plt.savefig(fname, dpi=300, bbox_inches='tight')
-#     plt.close('all')
